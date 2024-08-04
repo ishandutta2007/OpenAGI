@@ -1,10 +1,7 @@
 import os
 import pytest
-import requests
-from requests.models import Response
-import json
 
-from pyopenagi.tools.online.wolfram_alpha import WolframAlpha
+from pyopenagi.tools.wolfram.wolfram_alpha import WolframAlpha
 from dotenv import load_dotenv, find_dotenv
 
 @pytest.fixture(scope="module")
@@ -12,7 +9,7 @@ def test_wolfram_alpha_id():
     load_dotenv(find_dotenv())
     if "WOLFRAM_ALPHA_APPID" not in os.environ or not os.environ["WOLFRAM_ALPHA_APPID"]:
         with pytest.raises(ValueError):
-            wolfram_alpha = WolframAlpha()
+            WolframAlpha()
         pytest.skip("WolframAlpha app id is not set.")
     else:
         return True

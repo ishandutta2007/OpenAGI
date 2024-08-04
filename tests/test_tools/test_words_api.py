@@ -1,7 +1,7 @@
 import os
 import pytest
 
-from pyopenagi.tools.online.words_api import WordsAPI
+from pyopenagi.tools.words_api.words_api import WordsAPI
 from dotenv import load_dotenv, find_dotenv
 
 @pytest.fixture(scope="module")
@@ -9,7 +9,7 @@ def test_rapid_api_key():
     load_dotenv(find_dotenv())
     if "RAPID_API_KEY" not in os.environ or not os.environ["RAPID_API_KEY"]:
         with pytest.raises(ValueError):
-            words_api = WordsAPI()
+            WordsAPI()
         pytest.skip("Rapid api key is not set.")
 
 @pytest.mark.usefixtures("test_rapid_api_key")

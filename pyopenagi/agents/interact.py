@@ -7,23 +7,66 @@ import base64
 import sys
 import os
 
-def list_available_agents():
-    url = "https://openagi-beta.vercel.app/api/get_all_agents"
-    response = requests.get(url)
-    response: dict = response.json()
-    agent_list = []
-    for v in list(response.values())[:-1]:
-        agent_list.append({
-            "agent": "/".join([v["author"], v["name"]])
-        })
-    return agent_list
+
 class Interactor:
-    def __init__(self, base_folder=''):
+    def __init__(self):
         script_path = os.path.abspath(__file__)
         script_dir = os.path.dirname(script_path)
-        self.base_folder = os.path.join(script_dir, base_folder)
+        self.base_folder = script_dir
 
-    def upload_agent(self, agent):
+    def list_available_agents(self) -> list:
+        """List available agents in the database"""
+        url = "https://openagi-beta.vercel.app/api/get_all_agents"
+        response = requests.get(url)
+        response: dict = response.json()
+        agent_list = []
+        for v in list(response.values())[:-1]:
+            agent_list.append({
+                "agent": "/".join([v["author"], v["name"]])
+            })
+        return agent_list
+
+    def download_agent(self, agent: str) -> None:
+        """Download an agent from the database
+
+        Args:
+            agent (str): in the format of "author/agent_name"
+        """
+        assert "/" in agent, 'agent_name should in the format of "author/agent_name"'
+        author, name = agent.split("/")
+        # print(author, name)
+        query = f'https://openagi-beta.vercel.app/api/download?author={author}&name={name}'
+        response = requests.get(query)
+        response: dict = response.json()
+
+        agent_folder = os.path.join(self.base_folder, agent)
+
+        if not os.path.exists(agent_folder):
+            os.makedirs(agent_folder)
+
+        encoded_config = response.get('config')
+        encoded_code = response.get("code")
+        encoded_reqs = response.get('dependencies')
+
+        self.download_config(
+            self.decompress(encoded_config),
+            agent
+        )
+        self.download_code(
+            self.decompress(encoded_code),
+            agent
+        )
+        self.download_reqs(
+            self.decompress(encoded_reqs),
+            agent
+        )
+
+    def upload_agent(self, agent) -> None:
+        """Upload an agent to the database
+
+        Args:
+            agent (str): in the format of "author/agent_name"
+        """
         agent_dir = os.path.join(self.base_folder, agent)
 
         author, name = agent.split("/")
@@ -101,39 +144,6 @@ class Interactor:
         encoded_data = encoded_data.decode('utf-8')
         return encoded_data
 
-    # download agent
-    def download_agent(self, agent):
-        assert "/" in agent, 'agent_name should in the format of "author/agent_name"'
-        author, name = agent.split("/")
-        # print(author, name)
-        query = f'https://openagi-beta.vercel.app/api/download?author={author}&name={name}'
-        response = requests.get(query)
-        response: dict = response.json()
-
-        if response:
-            print("Successfully downloaded")
-
-        agent_folder = os.path.join(self.base_folder, agent)
-
-        if not os.path.exists(agent_folder):
-            os.makedirs(agent_folder)
-
-        encoded_config = response.get('config')
-        encoded_code = response.get("code")
-        encoded_reqs = response.get('dependencies')
-
-        self.download_config(
-            self.decompress(encoded_config),
-            agent
-        )
-        self.download_code(
-            self.decompress(encoded_code),
-            agent
-        )
-        self.download_reqs(
-            self.decompress(encoded_reqs),
-            agent
-        )
 
     def decompress(self, encoded_data):
         compressed_data = base64.b64decode(encoded_data)
@@ -151,9 +161,48 @@ class Interactor:
     def download_reqs(self, reqs_data, agent):
         reqs_path = os.path.join(self.base_folder, agent, "meta_requirements.txt")
 
+        reqs_data = reqs_data.replace(";", "\n")
+
         with open(reqs_path, 'w') as file:
             file.write(reqs_data)
 
+    def download_code(self, code_data, agent):
+        code_path = os.path.join(self.base_folder, agent, "agent.py")
+
+        with open(code_path, 'w', newline='') as file:
+            file.write(code_data)
+
+    def check_reqs_installed(self, agent):
+    # Run the `conda list` command and capture the output
+        reqs_path = os.path.join(self.base_folder, agent, "meta_requirements.txt")
+
+        result = subprocess.run(['conda', 'list'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Decode the output from bytes to string
+        with open(reqs_path, "r") as f:
+            reqs = []
+            lines = f.readlines()
+            for line in lines:
+                line = line.replace("\n", "")
+                if "==" in line:
+                    reqs.append(line.split("==")[0])
+                else:
+                    reqs.append(line)
+
+        output = result.stdout.decode('utf-8')
+
+        # Extract the list of installed packages
+        installed_packages = [line.split()[0] for line in output.splitlines() if line]
+
+        # Check for each package if it is installed
+        for req in reqs:
+            if req not in installed_packages:
+                return False
+
+        return True
+
+
+    def install_agent_reqs(self, agent):
+        reqs_path = os.path.join(self.base_folder, agent, "meta_requirements.txt")
         subprocess.check_call([
             sys.executable,
             "-m",
@@ -163,15 +212,9 @@ class Interactor:
             reqs_path
         ])
 
-    def download_code(self, code_data, agent):
-        code_path = os.path.join(self.base_folder, agent, "agent.py")
-
-        with open(code_path, 'w', newline='') as file:
-            file.write(code_data)
-
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", required=True, choices=["download", "upload"])
+    parser.add_argument("--mode", choices=["download", "upload"])
     parser.add_argument("--agent", required=True)
     args = parser.parse_args()
     return args
@@ -180,14 +223,16 @@ if __name__ == '__main__':
     pass
     # list_available_agents() # list agents that can be used from db
 
-    # args = parse_args()
-    # mode = args.mode
-    # agent = args.agent
+    args = parse_args()
+    mode = args.mode
+    agent = args.agent
 
+    client = Interactor()
+    # client.check_reqs_installed(agent)
     # client = Interactor()
-    # if mode == "download":
-    #     client.download_agent(agent) # download agents
+    if mode == "download":
+        client.download_agent(agent) # download agents
 
-    # else:
-    #     assert mode == "upload"
-    #     client.upload_agent(agent) # upload agents
+    else:
+        assert mode == "upload"
+        client.upload_agent(agent) # upload agents

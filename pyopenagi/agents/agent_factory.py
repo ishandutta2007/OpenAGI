@@ -1,21 +1,30 @@
-from datetime import datetime
+# this class runs the "AgentProcess" for the agents and holds the pool
+# of agents currently usable
+# this class isn't actually instantiated until the user instantiates
+# a specific agent like MathAgent
+
 import heapq
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Thread, Lock, Event
+from threading import Lock, Event
 from pympler import asizeof
-from .interact import Interactor, list_available_agents
+from .interact import Interactor
 import os
 import importlib
 
 class AgentFactory:
+    """ duplicate of AgentProcessFactory """
+
     def __init__(self, llm, agent_process_queue, agent_process_factory, agent_log_mode):
+        # 256 agent ids heapified similar to AgentProcessFactory
         self.max_aid = 256
-        self.llm = llm
+        # self.llm = llm
         self.aid_pool = [i for i in range(self.max_aid)]
         heapq.heapify(self.aid_pool)
         self.agent_process_queue = agent_process_queue
+
         self.agent_process_factory = agent_process_factory
 
+
+        # added to with index aid
         self.current_agents = {}
 
         self.current_agents_lock = Lock()
@@ -29,7 +38,7 @@ class AgentFactory:
         return ''.join(x.title() for x in components)
 
     def list_agents(self):
-        agent_list = list_available_agents()
+        agent_list = Interactor().list_available_agents()
         for agent in agent_list:
             print(agent)
 
@@ -47,17 +56,20 @@ class AgentFactory:
         script_path = os.path.abspath(__file__)
         script_dir = os.path.dirname(script_path)
 
+        interactor = Interactor()
+
         if not os.path.exists(os.path.join(script_dir, agent_name)):
-            interactor = Interactor()
             interactor.download_agent(agent_name)
+
+        if not interactor.check_reqs_installed(agent_name):
+            interactor.install_agent_reqs(agent_name)
 
         agent_class = self.load_agent_instance(agent_name)
 
+        """ initialize each agent """
         agent = agent_class(
             agent_name = agent_name,
             task_input = task_input,
-            llm = self.llm,
-            agent_process_queue = self.agent_process_queue,
             agent_process_factory = self.agent_process_factory,
             log_mode = self.agent_log_mode
         )
@@ -73,6 +85,8 @@ class AgentFactory:
         return agent
 
     def run_agent(self, agent_name, task_input):
+        """ run the Thread and return output """
+
         agent = self.activate_agent(
             agent_name=agent_name,
             task_input=task_input
@@ -83,6 +97,7 @@ class AgentFactory:
         return output
 
     def print_agent(self):
+        """ print all agent information in a nice organized format """
         headers = ["Agent ID", "Agent Name", "Created Time", "Status", "Memory Usage"]
         data = []
         for id, agent in self.current_agents.items():
@@ -97,6 +112,7 @@ class AgentFactory:
 
 
     def print(self, headers, data):
+        """ generalized table printer for the agent data """
         # align output
         column_widths = [
             max(len(str(row[i])) for row in [headers] + data) for i in range(len(headers))
@@ -112,9 +128,12 @@ class AgentFactory:
 
 
     def format_row(self, row, widths, align="<"):
+        """ helper utility for print """
         row_str = " | ".join(f"{str(item):{align}{widths[i]}}" for i, item in enumerate(row))
         return row_str
 
     def deactivate_agent(self, aid):
+        """ remove the agent id from the pool and allow it to be re-used """
+
         self.current_agents.pop(aid)
         heapq.heappush(self.aid_pool, aid)
