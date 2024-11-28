@@ -6,6 +6,8 @@
 
 ## ✈️ Getting Started
 OpenAGI is used as the agent creation package to build agents for [AIOS](https://github.com/agiresearch/AIOS).
+**Notice:** For building up agents in the AIOS, please migrate to the [Cerebrum](https://github.com/agiresearch/Cerebrum), which is our latest SDK to connect with AIOS kernel.
+
 ### Installation
 From PyPI
 ```
